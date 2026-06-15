@@ -189,7 +189,7 @@ function Dashboard() {
           product_name: config.productName,
           offer_type: config.offerType,
           page_goal: config.pageGoal,
-          brief: config as unknown as Record<string, unknown>,
+          brief: config as unknown as import("@/integrations/supabase/types").Json,
         });
       }
 
