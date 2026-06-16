@@ -102,6 +102,7 @@ function Dashboard() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [generatedHtml, setGeneratedHtml] = useState("");
   const [copied, setCopied] = useState(false);
+  const generateFunnelFn = useServerFn(generateFunnel);
 
   const [config, setConfig] = useState<FunnelConfig>({
     productName: "",
