@@ -1,91 +1,123 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { generateFunnelHtml, type FunnelConfig } from "@/lib/funnel-generator";
+import { z } from "zod";
+import process from "node:process";
 
-function buildPrompt(config: FunnelConfig): string {
-  return `Tu es un expert en copywriting et en tunnels de vente haute conversion optimisés pour Systeme.io. Génère un fichier HTML/CSS complet et autonome pour un tunnel de vente avec ces paramètres :
+const FunnelConfigSchema = z.object({
+  productName: z.string(),
+  offerType: z.enum(["infoproduit", "coaching", "ecommerce", "physique"]),
+  avatar: z.string(),
+  pageGoal: z.enum(["capture", "vente", "remerciement"]),
+  ambianceColor: z.string(),
+  bgColor: z.string(),
+  accentColor: z.string(),
+  heroLayout: z.enum(["split-left", "split-right", "centered"]),
+  typography: z.enum(["impact", "premium", "minimal"]),
+  sectionsCount: z.number(),
+  bonusSections: z.array(z.enum(["temoignages", "faq", "garantie", "tarifs"])),
+});
 
-- Produit/Service : ${config.productName}
-- Type d'offre : ${config.offerType}
-- Avatar client : ${config.avatar}
-- Objectif de page : ${config.pageGoal}
-- Couleur d'ambiance : ${config.ambianceColor}
-- Couleur de fond : ${config.bgColor}
-- Couleur accent : ${config.accentColor}
-- Layout Hero : ${config.heroLayout}
-- Typographie : ${config.typography}
-- Nombre de sections : ${config.sectionsCount}
-- Sections bonus : ${config.bonusSections.join(", ")}
+const FONT_STACKS = {
+  impact: "'Archivo Black', 'Helvetica Neue', Arial, sans-serif",
+  premium: "'Playfair Display', Georgia, 'Times New Roman', serif",
+  minimal: "'Inter', system-ui, -apple-system, sans-serif",
+} as const;
 
-Règles IMPORTANTES :
-1. Retourne UNIQUEMENT le code HTML complet, sans explication ni balises markdown
-2. Le CSS doit être intégré dans une balise <style> dans le <head>
-3. Toutes les classes CSS doivent être préfixées avec .ts- pour éviter les conflits Systeme.io
-4. Le design doit être premium, mobile-first et responsive
-5. Utilise les couleurs fournies
-6. Inclus un vrai copywriting persuasif basé sur l'avatar client
-7. Tous les titres doivent être en LETTRES CAPITALES`;
-}
+const GOAL_CTA = {
+  capture: "JE REÇOIS MON ACCÈS GRATUIT",
+  vente: "JE COMMANDE MAINTENANT",
+  remerciement: "ACCÉDER À MON ESPACE",
+} as const;
 
-function stripMarkdownFences(text: string): string {
-  let out = text.trim();
-  const fence = out.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
-  if (fence) out = fence[1].trim();
-  const start = out.indexOf("<!DOCTYPE");
-  if (start > 0) out = out.slice(start);
-  return out.trim();
-}
-
-/**
- * Generates the funnel HTML by calling the Anthropic Claude API server-side.
- * The API key never reaches the browser. Falls back to the local deterministic
- * generator if the key is missing or the API call fails, so the feature never hard-breaks.
- */
 export const generateFunnel = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: { config: FunnelConfig }) => data)
+  .inputValidator(z.object({ config: FunnelConfigSchema }))
   .handler(async ({ data }) => {
     const { config } = data;
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      return { html: generateFunnelHtml(config), source: "fallback" as const };
+      throw new Error(
+        "Clé API Anthropic manquante. Ajoutez ANTHROPIC_API_KEY dans vos variables d'environnement Lovable."
+      );
     }
 
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-5",
-          max_tokens: 8000,
-          messages: [{ role: "user", content: buildPrompt(config) }],
-        }),
-      });
+    const font = FONT_STACKS[config.typography];
+    const cta = GOAL_CTA[config.pageGoal];
 
-      if (!response.ok) {
-        const detail = await response.text();
-        console.error("Anthropic API error", response.status, detail);
-        return { html: generateFunnelHtml(config), source: "fallback" as const };
-      }
+    const heroDirection =
+      config.heroLayout === "centered"
+        ? "column; text-align:center;"
+        : config.heroLayout === "split-right"
+        ? "row-reverse;"
+        : "row;";
 
-      const result = (await response.json()) as {
-        content?: Array<{ type: string; text?: string }>;
+    const prompt = `Tu es un expert en copywriting et tunnels de vente haute conversion optimisés pour Systeme.io.
+
+Génère un fichier HTML/CSS COMPLET et autonome pour un tunnel de vente avec ces paramètres :
+
+- Produit/Service : ${config.productName}
+- Type d'offre : ${config.offerType}
+- Avatar client (cible, peurs, désirs) : ${config.avatar || "entrepreneur cherchant à développer son activité en ligne"}
+- Objectif de la page : ${config.pageGoal}
+- Sections bonus à inclure : ${config.bonusSections.join(", ") || "aucune"}
+- Nombre de sections principales : ${config.sectionsCount}
+
+Couleurs :
+- Fond principal : ${config.bgColor}
+- Couleur d'ambiance/gradient : ${config.ambianceColor}
+- Couleur accent (boutons, titres clés) : ${config.accentColor}
+
+Typographie : ${font}
+Layout Hero : ${config.heroLayout} (flex-direction: ${heroDirection})
+CTA principal : "${cta}"
+
+RÈGLES STRICTES :
+1. Retourne UNIQUEMENT le code HTML complet — aucune explication, aucun texte avant ou après, aucune balise markdown ou triple backtick
+2. Le fichier doit commencer par <!DOCTYPE html> et finir par </html>
+3. Tout le CSS doit être dans une balise <style> dans le <head>
+4. TOUTES les classes CSS doivent être préfixées avec .ts- (ex: .ts-hero, .ts-btn) pour éviter les conflits Systeme.io
+5. Le design doit être premium, mobile-first et responsive (media queries à 768px et 1024px)
+6. Utilise EXACTEMENT les couleurs fournies
+7. Écris un vrai copywriting persuasif et personnalisé basé sur l'avatar client — pas de placeholders comme "PILIER N°1" ou "bénéfice concret"
+8. Génère de vrais témoignages fictifs crédibles si la section témoignages est demandée
+9. Génère de vraies questions/réponses FAQ pertinentes si la section FAQ est demandée
+10. Le contenu doit être entièrement en français`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
       };
-      const text = result.content?.find((b) => b.type === "text")?.text ?? "";
-      const html = stripMarkdownFences(text);
-
-      if (!html.toLowerCase().includes("<html")) {
-        return { html: generateFunnelHtml(config), source: "fallback" as const };
-      }
-
-      return { html, source: "claude" as const };
-    } catch (err) {
-      console.error("Anthropic request failed", err);
-      return { html: generateFunnelHtml(config), source: "fallback" as const };
+      throw new Error(
+        `Erreur API Claude (${response.status}): ${errorData.error?.message ?? "Erreur inconnue"}`
+      );
     }
+
+    const result = (await response.json()) as {
+      content: Array<{ type: string; text: string }>;
+    };
+
+    const html = result.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("")
+      .replace(/^```html\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    return { html };
   });
