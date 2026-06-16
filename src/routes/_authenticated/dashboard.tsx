@@ -197,7 +197,7 @@ function Dashboard() {
 
       await runLoadingAnimation();
 
-      const html = generateFunnelHtml(config);
+      const { html } = await generateFunnelFn({ data: { config } });
       setGeneratedHtml(html);
 
       queryClient.setQueryData(["profile"], (old: typeof profile) =>
