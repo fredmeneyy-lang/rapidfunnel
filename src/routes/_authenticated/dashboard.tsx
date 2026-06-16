@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/hooks/use-profile";
 import {
-  generateFunnelHtml,
   type FunnelConfig,
   type OfferType,
   type PageGoal,
@@ -12,6 +11,8 @@ import {
   type Typography,
   type BonusSection,
 } from "@/lib/funnel-generator";
+import { generateFunnel } from "@/lib/funnel-generator.functions";
+import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -101,6 +102,7 @@ function Dashboard() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [generatedHtml, setGeneratedHtml] = useState("");
   const [copied, setCopied] = useState(false);
+  const generateFunnelFn = useServerFn(generateFunnel);
 
   const [config, setConfig] = useState<FunnelConfig>({
     productName: "",
@@ -195,7 +197,7 @@ function Dashboard() {
 
       await runLoadingAnimation();
 
-      const html = generateFunnelHtml(config);
+      const { html } = await generateFunnelFn({ data: { config } });
       setGeneratedHtml(html);
 
       queryClient.setQueryData(["profile"], (old: typeof profile) =>
